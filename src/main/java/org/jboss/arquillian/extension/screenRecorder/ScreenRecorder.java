@@ -14,7 +14,11 @@ import java.awt.Robot;
 import java.awt.Toolkit;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.IOException;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import org.apache.commons.io.FileUtils;
 
 /**
  *
@@ -23,22 +27,37 @@ import java.util.concurrent.TimeUnit;
 public class ScreenRecorder {
 
     private final int FRAME_RATE;
-    private Dimension screenBounds;
-    private IMediaWriter writer;
-    private boolean running = false;
+    private final Dimension screenBounds;
+    private final String videoType;
+    private volatile boolean running = false;
+    private volatile File destination;
+    private Thread thread;
 
-    public ScreenRecorder(File file, int frameRate) {
+    public ScreenRecorder(int frameRate, String videoType) {
         this.FRAME_RATE = frameRate;
+        this.videoType = videoType;
         screenBounds = Toolkit.getDefaultToolkit().getScreenSize();
-        writer = ToolFactory.makeWriter(file.getAbsolutePath());
-        writer.addVideoStream(0, 0, ICodec.ID.CODEC_ID_MPEG4,
-                screenBounds.width / 2, screenBounds.height / 2);
     }
 
+    /**
+     * Starts recording a video to the temporary file. If {@link #stopRecording(java.io.File) }
+     * is invoked, this method stops recording.
+     */
     public void startRecording() {
         running = true;
-        new Thread(new Runnable() {
+        thread = new Thread(new Runnable() {
             public void run() {
+                File output;
+                try {
+                    output = File.createTempFile("arquillain-screen-recorder", "." + videoType);
+                    output.deleteOnExit();
+                    output.createNewFile();
+                } catch (IOException e) {
+                    throw new IllegalStateException("Can't create a temporary file for recording.", e);
+                }
+                IMediaWriter writer = ToolFactory.makeWriter(output.getAbsolutePath());
+                writer.addVideoStream(0, 0, ICodec.ID.CODEC_ID_MPEG4,
+                    screenBounds.width / 2, screenBounds.height / 2);
                 long startTime = System.nanoTime();
                 while (running) {
                     BufferedImage screen = getDesktopScreenshot();
@@ -55,14 +74,35 @@ public class ScreenRecorder {
                     }
                     if (!running) {
                         writer.close();
+                        try {
+                            if (destination != null) {
+                                FileUtils.moveFile(output, destination);
+                            }
+                        } catch (IOException e) {
+                            throw new IllegalStateException("Can't move the temporary recorded content to the destination file.", e);
+                        } finally {
+                            output.delete();
+                        }
                     }
                 }
             }
-        }).start();
+        });
+        thread.start();
     }
 
-    public void stopRecording() {
+    /**
+     * Stops recording. If the destination file is specified, the recorded content
+     * is moved to it. If the file is not specified, the recorded content is dropped.
+     *
+     * @param destination destination file
+     */
+    public void stopRecording(File destination) {
+        this.destination = destination;
         running = false;
+        try {
+            thread.join();
+        } catch (InterruptedException ignored) {
+        }
     }
 
     private BufferedImage convertToType(BufferedImage sourceImage, int targetType) {

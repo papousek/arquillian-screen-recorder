@@ -18,8 +18,11 @@ import org.jboss.arquillian.config.descriptor.api.ArquillianDescriptor;
 import org.jboss.arquillian.config.descriptor.api.ExtensionDef;
 import org.jboss.arquillian.container.spi.event.container.AfterDeploy;
 import org.jboss.arquillian.container.spi.event.container.AfterUnDeploy;
+import org.jboss.arquillian.core.api.Instance;
+import org.jboss.arquillian.core.api.annotation.Inject;
 import org.jboss.arquillian.core.api.annotation.Observes;
 import org.jboss.arquillian.test.spi.TestClass;
+import org.jboss.arquillian.test.spi.TestResult;
 import org.jboss.arquillian.test.spi.event.suite.After;
 import org.jboss.arquillian.test.spi.event.suite.Before;
 
@@ -29,11 +32,12 @@ import org.jboss.arquillian.test.spi.event.suite.Before;
  */
 public class LifecycleObserver {
 
+    @Inject
+    private Instance<TestResult> testResult;
 
     private RecorderConfiguration configuration;
     private ScreenRecorder recorder;
 
-    private boolean recordEachTestSeparately;
     private boolean shouldTakeScreenshots;
     private boolean shouldRecordVideo;
 
@@ -44,7 +48,6 @@ public class LifecycleObserver {
                 configuration.setProperties(extension.getExtensionProperties());
             }
         }
-        recordEachTestSeparately = configuration.isEachTestRecordedSeparately();
         shouldRecordVideo = configuration.shouldRecordVideo();
         shouldTakeScreenshots = configuration.shouldTakeScreenshots();
 
@@ -59,22 +62,21 @@ public class LifecycleObserver {
     }
 
     public void executeBeforeStart(@Observes AfterDeploy event) {
-        if (!recordEachTestSeparately && shouldRecordVideo) {
-            startRecording(configuration.getVideoFolder(), configuration.getVideoName());
+        if (configuration.getRecordingType().equals(RecordingType.SUITE) && shouldRecordVideo) {
+            startRecording();
         }
     }
 
     public void executeBeforeStop(@Observes AfterUnDeploy event) {
-        if (!recordEachTestSeparately && shouldRecordVideo) {
-            recorder.stopRecording();
+        if (configuration.getRecordingType().equals(RecordingType.SUITE) && shouldRecordVideo) {
+            stopRecording(configuration.getVideoFolder(), configuration.getVideoName());
         }
     }
 
     public void executeBeforeTest(@Observes Before event) throws AWTException, IOException {
         //timer task
-        if (recordEachTestSeparately) {
-            File testClassDirectory = prepareDirectory(configuration.getVideoFolder(), event.getTestClass());
-            startRecording(testClassDirectory, event.getTestMethod().getName());
+        if (configuration.getRecordingType().equals(RecordingType.TEST) || configuration.getRecordingType().equals(RecordingType.FAILURE)) {
+            startRecording();
         }
         if (shouldTakeScreenshots) {
             createScreenshotAndSaveFile(event.getTestClass(), event.getTestMethod(), "before");
@@ -82,8 +84,11 @@ public class LifecycleObserver {
     }
 
     public void executeAfterTest(@Observes After event) throws AWTException, IOException {
-        if (recordEachTestSeparately) {
-            recorder.stopRecording();
+        if (configuration.getRecordingType().equals(RecordingType.TEST) || (configuration.getRecordingType().equals(RecordingType.FAILURE) && testResult.get().getStatus().equals(TestResult.Status.FAILED))) {
+            File testClassDirectory = prepareDirectory(configuration.getVideoFolder(), event.getTestClass());
+            stopRecording(testClassDirectory, event.getTestMethod().getName());
+        } else if (configuration.getRecordingType().equals(RecordingType.FAILURE)) {
+            recorder.stopRecording(null);
         }
         if (shouldTakeScreenshots) {
             createScreenshotAndSaveFile(event.getTestClass(), event.getTestMethod(), "after");
@@ -98,11 +103,15 @@ public class LifecycleObserver {
         return directory;
     }
 
-    private void startRecording(File directory, String fileName) {
+    private void startRecording() {
+        recorder = new ScreenRecorder(configuration.getFrameRate(), configuration.getVideoFileType());
+        recorder.startRecording();
+    }
+
+    private void stopRecording(File directory, String fileName) {
         String videoName = fileName + "." + configuration.getVideoFileType();
         File video = FileUtils.getFile(directory, videoName);
-        recorder = new ScreenRecorder(video, configuration.getFrameRate());
-        recorder.startRecording();
+        recorder.stopRecording(video);
     }
 
     private void createScreenshotAndSaveFile(TestClass testClass, Method testMethod, String when) throws AWTException, IOException {

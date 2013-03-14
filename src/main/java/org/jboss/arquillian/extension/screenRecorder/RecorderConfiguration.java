@@ -21,7 +21,7 @@ public class RecorderConfiguration {
     private static final String DEFAULT_VIDEO_NAME = "record";
     private static final ImageType DEFAULT_IMAGE_FILE_TYPE = ImageType.PNG;
     private static final String DEFAULT_VIDEO_FILE_TYPE = "mp4";
-    private static final boolean DEFAULT_RECORD_TESTS_SEPARATELY = false;
+    private static final RecordingType DEFAULT_RECORDING_TYPE = RecordingType.SUITE;
     private static final boolean DEFAULT_SHOULD_TAKE_SCREENSHOTS = true;
     private static final boolean DEFAULT_SHOULD_RECORD_VIDEO = true;
     private static final int DEFAULT_FRAME_RATE = 20;
@@ -53,12 +53,12 @@ public class RecorderConfiguration {
 
     public ImageType getImageFileType() {
         return isPropertyExists(SystemProperties.IMAGE_FILE_TYPE) ?
-                ImageType.valueOf(properties.get(SystemProperties.IMAGE_FILE_TYPE)) : DEFAULT_IMAGE_FILE_TYPE;
+                ImageType.valueOf(properties.get(SystemProperties.IMAGE_FILE_TYPE).toUpperCase()) : DEFAULT_IMAGE_FILE_TYPE;
     }
 
-    public boolean isEachTestRecordedSeparately() {
-        return isPropertyExists(SystemProperties.RECORD_TESTS_SEPARATELY) ?
-                Boolean.parseBoolean(properties.get(SystemProperties.RECORD_TESTS_SEPARATELY)) : DEFAULT_RECORD_TESTS_SEPARATELY;
+    public RecordingType getRecordingType() {
+        return isPropertyExists(SystemProperties.IMAGE_FILE_TYPE) ?
+                RecordingType.valueOf(properties.get(SystemProperties.RECORDING_TYPE).toUpperCase()) : DEFAULT_RECORDING_TYPE;
     }
 
     public boolean shouldTakeScreenshots() {
